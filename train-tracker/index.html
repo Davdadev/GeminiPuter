@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Train Tracker Live – Transperth</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0f1e;color:#fff}
+body{display:flex;flex-direction:column}
+header{
+  background:linear-gradient(135deg,#0d1b3e,#1a2a5e);
+  padding:12px 16px 10px;
+  display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid rgba(255,255,255,.12);
+  z-index:1000;flex-shrink:0;
+}
+.logo{font-size:22px}
+.title h1{font-size:15px;font-weight:700;letter-spacing:.4px}
+.title p{font-size:11px;color:#7ba7d8;margin-top:1px}
+.live-badge{
+  margin-left:auto;display:flex;align-items:center;gap:5px;
+  background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.3);
+  border-radius:20px;padding:3px 9px;font-size:11px;font-weight:600;color:#00e676;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:#00e676;animation:blink 1.8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+#map{flex:1;z-index:1}
+.info-bar{
+  background:#0d1b3e;
+  padding:6px 14px;font-size:11px;color:#6b90c8;
+  border-top:1px solid rgba(255,255,255,.1);
+  flex-shrink:0;text-align:center;
+}
+.panel{
+  position:absolute;
+  background:rgba(10,15,30,.88);
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:12px;padding:10px 13px;
+  z-index:500;backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+.train-count-panel{top:10px;left:10px}
+.train-count-panel .num{font-size:28px;font-weight:700;color:#00e676;line-height:1}
+.train-count-panel .label{font-size:10px;color:#7ba7d8;text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
+.legend-panel{bottom:60px;right:10px;font-size:11px;max-width:165px}
+.legend-panel h4{font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:#7ba7d8;margin-bottom:7px}
+.legend-item{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.legend-swatch{width:18px;height:3px;border-radius:2px;flex-shrink:0}
+.leaflet-control-zoom a{background:#0d1b3e!important;color:#7ba7d8!important;border-color:rgba(255,255,255,.15)!important}
+.leaflet-tooltip{background:rgba(10,15,30,.92)!important;border:1px solid rgba(255,255,255,.2)!important;color:#fff!important;font-size:11px!important;border-radius:7px!important;padding:4px 8px!important;box-shadow:0 2px 10px rgba(0,0,0,.4)!important}
+.leaflet-tooltip-top:before{border-top-color:rgba(255,255,255,.2)!important}
+.train-icon{
+  width:14px;height:14px;border-radius:50%;
+  border:2.5px solid #fff;
+  box-shadow:0 0 8px rgba(0,0,0,.6);
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🚆</div>
+  <div class="title">
+    <h1>Train Tracker Live</h1>
+    <p>Transperth Network · Perth, WA</p>
+  </div>
+  <div class="live-badge"><div class="dot"></div>LIVE</div>
+</header>
+<div id="map"></div>
+<div class="info-bar" id="infoBar">Loading train positions…</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const LINES={
+  joondalup:{
+    name:'Joondalup/Butler',shortName:'Joondalup',color:'#0099d6',
+    stations:[
+      {n:'Butler',lat:-31.6413,lng:115.7404},
+      {n:'Clarkson',lat:-31.6809,lng:115.7463},
+      {n:'Currambine',lat:-31.7151,lng:115.7491},
+      {n:'Joondalup',lat:-31.7442,lng:115.7662},
+      {n:'Edgewater',lat:-31.7584,lng:115.7801},
+      {n:'Whitfords',lat:-31.7717,lng:115.7917},
+      {n:'Greenwood',lat:-31.8007,lng:115.8062},
+      {n:'Warwick',lat:-31.8249,lng:115.8093},
+      {n:'Girrawheen',lat:-31.8469,lng:115.8058},
+      {n:'Alexander Heights',lat:-31.8608,lng:115.8155},
+      {n:'Mirrabooka',lat:-31.8727,lng:115.8261},
+      {n:'Nollamara',lat:-31.8897,lng:115.8343},
+      {n:'Morley',lat:-31.8981,lng:115.8441},
+      {n:'Bayswater',lat:-31.9151,lng:115.8567},
+      {n:'Mount Lawley',lat:-31.9252,lng:115.8590},
+      {n:'Leederville',lat:-31.9367,lng:115.8470},
+      {n:'Perth',lat:-31.9524,lng:115.8588},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+  mandurah:{
+    name:'Mandurah',shortName:'Mandurah',color:'#f5a623',
+    stations:[
+      {n:'Butler',lat:-31.6413,lng:115.7404},
+      {n:'Clarkson',lat:-31.6809,lng:115.7463},
+      {n:'Currambine',lat:-31.7151,lng:115.7491},
+      {n:'Joondalup',lat:-31.7442,lng:115.7662},
+      {n:'Edgewater',lat:-31.7584,lng:115.7801},
+      {n:'Whitfords',lat:-31.7717,lng:115.7917},
+      {n:'Greenwood',lat:-31.8007,lng:115.8062},
+      {n:'Warwick',lat:-31.8249,lng:115.8093},
+      {n:'Morley',lat:-31.8981,lng:115.8441},
+      {n:'Bayswater',lat:-31.9151,lng:115.8567},
+      {n:'Perth Underground',lat:-31.9537,lng:115.8568},
+      {n:'Esplanade',lat:-31.9602,lng:115.8595},
+      {n:'Bull Creek',lat:-32.0507,lng:115.8526},
+      {n:'Murdoch',lat:-32.0668,lng:115.8473},
+      {n:'Cockburn Central',lat:-32.1260,lng:115.8420},
+      {n:'Aubin Grove',lat:-32.1720,lng:115.8050},
+      {n:'Leda',lat:-32.2320,lng:115.8000},
+      {n:'Warnbro',lat:-32.3382,lng:115.7618},
+      {n:'Mandurah',lat:-32.5289,lng:115.7261},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+  fremantle:{
+    name:'Fremantle',shortName:'Fremantle',color:'#00b050',
+    stations:[
+      {n:'Fremantle',lat:-32.0567,lng:115.7487},
+      {n:'Victoria St',lat:-32.0383,lng:115.7527},
+      {n:'North Fremantle',lat:-32.0213,lng:115.7607},
+      {n:'Mosman Park',lat:-32.0063,lng:115.7663},
+      {n:'Cottesloe',lat:-31.9977,lng:115.7728},
+      {n:'Grant Street',lat:-31.9919,lng:115.7728},
+      {n:'Swanbourne',lat:-31.9857,lng:115.7762},
+      {n:'Claremont',lat:-31.9793,lng:115.7831},
+      {n:'Daglish',lat:-31.9539,lng:115.8151},
+      {n:'Subiaco',lat:-31.9468,lng:115.8275},
+      {n:'West Leederville',lat:-31.9401,lng:115.8395},
+      {n:'City West',lat:-31.9497,lng:115.8447},
+      {n:'Perth',lat:-31.9524,lng:115.8588},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+  midland:{
+    name:'Midland',shortName:'Midland',color:'#ff6b2b',
+    stations:[
+      {n:'Perth',lat:-31.9524,lng:115.8588},
+      {n:'Claisebrook',lat:-31.9479,lng:115.8682},
+      {n:'East Perth',lat:-31.9462,lng:115.8732},
+      {n:'Burswood',lat:-31.9535,lng:115.8952},
+      {n:'Victoria Park',lat:-31.9746,lng:115.8949},
+      {n:'Carlisle',lat:-31.9842,lng:115.8984},
+      {n:"Queen's Park",lat:-32.0008,lng:115.9190},
+      {n:'Welshpool',lat:-31.9968,lng:115.9235},
+      {n:'Meltham',lat:-31.9726,lng:115.9448},
+      {n:'Bellevue',lat:-31.9054,lng:116.0148},
+      {n:'Midland',lat:-31.8881,lng:116.0070},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+  armadale:{
+    name:'Armadale/Thornlie',shortName:'Armadale',color:'#e00034',
+    stations:[
+      {n:'Perth',lat:-31.9524,lng:115.8588},
+      {n:'Claisebrook',lat:-31.9479,lng:115.8682},
+      {n:'East Perth',lat:-31.9462,lng:115.8732},
+      {n:'Burswood',lat:-31.9535,lng:115.8952},
+      {n:'Victoria Park',lat:-31.9746,lng:115.8949},
+      {n:'Carlisle',lat:-31.9842,lng:115.8984},
+      {n:'Cannington',lat:-32.0158,lng:115.9297},
+      {n:'Beckenham',lat:-32.0301,lng:115.9445},
+      {n:'Kenwick',lat:-32.0442,lng:115.9564},
+      {n:'Armadale',lat:-32.1494,lng:116.0132},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+  airport:{
+    name:'Airport Line',shortName:'Airport',color:'#9c27b0',
+    stations:[
+      {n:'Perth',lat:-31.9524,lng:115.8588},
+      {n:'Claisebrook',lat:-31.9479,lng:115.8682},
+      {n:'East Perth',lat:-31.9462,lng:115.8732},
+      {n:'Burswood',lat:-31.9535,lng:115.8952},
+      {n:'Belmont',lat:-31.9587,lng:115.9237},
+      {n:'Terminal 2/3',lat:-31.9401,lng:115.9671},
+      {n:'Terminal 4',lat:-31.9348,lng:115.9671},
+      {n:'Airport North',lat:-31.9213,lng:115.9666},
+      {n:'Redcliffe',lat:-31.9222,lng:115.9922},
+      {n:'Woodbridge',lat:-31.9023,lng:115.9989},
+      {n:'Midland',lat:-31.8881,lng:116.0070},
+    ],
+    headway:15,first:5*60,last:23*60+30,
+  },
+};
+
+const map=L.map('map',{center:[-31.97,115.87],zoom:11});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'© OpenStreetMap © CARTO',maxZoom:19,
+}).addTo(map);
+
+Object.values(LINES).forEach(line=>{
+  const lls=line.stations.map(s=>[s.lat,s.lng]);
+  L.polyline(lls,{color:line.color,weight:4.5,opacity:.75}).addTo(map);
+  line.stations.forEach(s=>{
+    L.circleMarker([s.lat,s.lng],{
+      radius:3.5,color:line.color,fillColor:'#fff',fillOpacity:1,weight:2,
+    }).addTo(map).bindTooltip(s.n,{direction:'top',offset:[0,-6]});
+  });
+});
+
+const mapEl=document.getElementById('map');
+const cp=document.createElement('div');
+cp.style.cssText='position:absolute;top:10px;left:10px;background:rgba(10,15,30,.88);border:1px solid rgba(255,255,255,.13);border-radius:12px;padding:10px 13px;z-index:500;backdrop-filter:blur(10px)';
+cp.innerHTML='<div id="numTrains" style="font-size:28px;font-weight:700;color:#00e676;line-height:1">–</div><div style="font-size:10px;color:#7ba7d8;text-transform:uppercase;letter-spacing:.8px;margin-top:2px">Active Trains</div>';
+mapEl.appendChild(cp);
+
+const lp=document.createElement('div');
+lp.style.cssText='position:absolute;bottom:60px;right:10px;background:rgba(10,15,30,.88);border:1px solid rgba(255,255,255,.13);border-radius:12px;padding:10px 13px;z-index:500;backdrop-filter:blur(10px);font-size:11px;max-width:165px';
+lp.innerHTML='<div style="font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:#7ba7d8;margin-bottom:7px">Lines</div>'+Object.values(LINES).map(l=>
+  `<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><div style="width:18px;height:3px;border-radius:2px;background:${l.color};flex-shrink:0"></div>${l.name}</div>`
+).join('');
+mapEl.appendChild(lp);
+
+const trainMarkers={};
+
+function perthNow(){
+  const now=new Date();
+  const ms=now.getTime()+(8*3600000)+now.getTimezoneOffset()*60000;
+  const p=new Date(ms);
+  return{
+    mins:p.getHours()*60+p.getMinutes()+p.getSeconds()/60,
+    timeStr:p.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}),
+  };
+}
+
+function lerpPos(stations,t){
+  const n=stations.length-1;
+  const sp=Math.min(t*n,n-0.0001);
+  const i=Math.floor(sp);const f=sp-i;
+  const a=stations[i],b=stations[Math.min(i+1,n)];
+  return{lat:a.lat+(b.lat-a.lat)*f,lng:a.lng+(b.lng-a.lng)*f};
+}
+
+function makeIcon(color){
+  return L.divIcon({
+    html:`<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 0 8px ${color}80,0 1px 4px rgba(0,0,0,.6)"></div>`,
+    className:'',iconSize:[14,14],iconAnchor:[7,7],
+  });
+}
+
+function tick(){
+  const{mins,timeStr}=perthNow();
+  let count=0;const seen=new Set();
+  Object.entries(LINES).forEach(([lk,line])=>{
+    const jMins=(line.stations.length-1)*2.5;
+    [1,-1].forEach(dir=>{
+      const stas=dir===1?line.stations:[...line.stations].reverse();
+      const dest=stas[stas.length-1].n;
+      let dep=line.first,ti=0;
+      while(dep<=line.last){
+        const arr=dep+jMins;
+        if(dep<=mins&&mins<arr){
+          const t=(mins-dep)/jMins;
+          const pos=lerpPos(stas,Math.min(t,0.999));
+          const id=`${lk}_${dir>0?'f':'r'}_${ti}`;
+          seen.add(id);
+          if(!trainMarkers[id]){
+            trainMarkers[id]=L.marker([pos.lat,pos.lng],{icon:makeIcon(line.color)})
+              .addTo(map).bindTooltip(`${line.shortName} → ${dest}`,{direction:'top',offset:[0,-10]});
+          } else {
+            trainMarkers[id].setLatLng([pos.lat,pos.lng]);
+          }
+          count++;
+        }
+        dep+=line.headway;ti++;
+      }
+    });
+  });
+  Object.keys(trainMarkers).forEach(id=>{
+    if(!seen.has(id)){map.removeLayer(trainMarkers[id]);delete trainMarkers[id];}
+  });
+  document.getElementById('numTrains').textContent=count||'0';
+  document.getElementById('infoBar').textContent=
+    `Schedule-based positions · Perth time ${timeStr} · Updates every 30s`;
+}
+tick();setInterval(tick,30000);
+</script>
+</body>
+</html>
